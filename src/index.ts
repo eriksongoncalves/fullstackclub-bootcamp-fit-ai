@@ -1,6 +1,5 @@
 import Fastify from "fastify";
 import fastifySwagger from "@fastify/swagger";
-import fastifySwaggerUi from "@fastify/swagger-ui";
 import { z } from "zod";
 import {
   jsonSchemaTransform,
@@ -8,8 +7,10 @@ import {
   validatorCompiler,
   ZodTypeProvider,
 } from "fastify-type-provider-zod";
-import { auth } from "./lib/auth.js";
 import fastifyCors from "@fastify/cors";
+import fastifyApiReference from "@scalar/fastify-api-reference";
+
+import { auth } from "./lib/auth.js";
 
 const app = Fastify({
   logger: true,
@@ -35,13 +36,27 @@ await app.register(fastifySwagger, {
   transform: jsonSchemaTransform,
 });
 
-await app.register(fastifySwaggerUi, {
-  routePrefix: "/docs",
-});
-
 await app.register(fastifyCors, {
   origin: [process.env.FRONTEND_URL || "http://localhost:3000"],
   credentials: true,
+});
+
+await app.register(fastifyApiReference, {
+  routePrefix: "/docs",
+  configuration: {
+    sources: [
+      {
+        title: "Coach API",
+        slug: "coach-api",
+        url: "/swagger.json",
+      },
+      {
+        title: "Auth API",
+        slug: "auth-api",
+        url: "/api/auth/open-api/generate-schema",
+      },
+    ],
+  },
 });
 
 app.withTypeProvider<ZodTypeProvider>().route({
