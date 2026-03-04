@@ -1,16 +1,38 @@
 import Fastify from "fastify";
+import { z } from "zod";
+import {
+  serializerCompiler,
+  validatorCompiler,
+  ZodTypeProvider,
+} from "fastify-type-provider-zod";
 
-const fastify = Fastify({
+const app = Fastify({
   logger: true,
 });
 
-fastify.get("/", async (request, reply) => {
-  return { hello: "world" };
+app.setValidatorCompiler(validatorCompiler);
+app.setSerializerCompiler(serializerCompiler);
+
+app.withTypeProvider<ZodTypeProvider>().route({
+  method: "GET",
+  url: "/",
+  handler: () => {
+    return { message: "Hello World!" };
+  },
+  schema: {
+    description: "Hello World endpoint",
+    tags: ["hello"],
+    response: {
+      200: z.object({
+        message: z.string(),
+      }),
+    },
+  },
 });
 
 try {
-  await fastify.listen({ port: Number(process.env.PORT) || 8081 });
+  await app.listen({ port: Number(process.env.PORT) || 8081 });
 } catch (err) {
-  fastify.log.error(err);
+  app.log.error(err);
   process.exit(1);
 }
