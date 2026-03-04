@@ -17,6 +17,7 @@
   "packageManager": "pnpm@10.24.0",
   "devDependencies": {
     "@types/node": "24",
+    "dotenv": "^17.3.1",
     "eslint": "9.39.2",
     "eslint-config-prettier": "10.1.8",
     "eslint-plugin-simple-import-sort": "^12.1.1",
