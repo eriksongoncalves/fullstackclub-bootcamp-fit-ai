@@ -11,24 +11,35 @@ import fastifyCors from "@fastify/cors";
 import fastifyApiReference from "@scalar/fastify-api-reference";
 
 import { auth } from "./lib/auth.js";
+import { CreateWorkoutPlan } from "./usecases/create-workout-plan.js";
+import { fromNodeHeaders } from "better-auth/node";
+import { NotFoundError } from "./errors/index.js";
+import { WeekDay } from "./generated/prisma/client.js";
 
 const app = Fastify({
   logger: true,
-});
+}).withTypeProvider<ZodTypeProvider>();
 
 app.setValidatorCompiler(validatorCompiler);
 app.setSerializerCompiler(serializerCompiler);
 
+// Register CORS to allow requests from the frontend
+await app.register(fastifyCors, {
+  origin: [process.env.FRONTEND_URL || "http://localhost:3000"],
+  credentials: true,
+});
+
+// Register Swagger for API documentation
 await app.register(fastifySwagger, {
   openapi: {
     info: {
-      title: "Bootcamp Fit AI API",
-      description: "API para o Fit AI Bootcamp",
+      title: "Bootcamp Treinos API",
+      description: "API para o bootcamp de treinos do FSC",
       version: "1.0.0",
     },
     servers: [
       {
-        description: "Local server",
+        description: "Localhost",
         url: "http://localhost:8081",
       },
     ],
@@ -36,18 +47,14 @@ await app.register(fastifySwagger, {
   transform: jsonSchemaTransform,
 });
 
-await app.register(fastifyCors, {
-  origin: [process.env.FRONTEND_URL || "http://localhost:3000"],
-  credentials: true,
-});
-
+// Swagger UI for API documentation
 await app.register(fastifyApiReference, {
   routePrefix: "/docs",
   configuration: {
     sources: [
       {
-        title: "Coach API",
-        slug: "coach-api",
+        title: "Bootcamp Treinos API",
+        slug: "bootcamp-treinos-api",
         url: "/swagger.json",
       },
       {
@@ -59,11 +66,120 @@ await app.register(fastifyApiReference, {
   },
 });
 
-app.withTypeProvider<ZodTypeProvider>().route({
+app.route({
+  method: "POST",
+  url: "/workout-plans",
+  schema: {
+    tags: ["Workout Plan"],
+    summary: "Create a workout plan",
+    body: z.object({
+      name: z.string(),
+      workoutDays: z.array(
+        z.object({
+          weekDay: z.enum(WeekDay),
+          name: z.string(),
+          isRest: z.boolean(),
+          coverImageUrl: z.url().optional(),
+          estimatedDurationInSeconds: z.number(),
+          exercises: z.array(
+            z.object({
+              order: z.number(),
+              name: z.string(),
+              sets: z.number(),
+              reps: z.number(),
+              restTimeInSeconds: z.number(),
+            }),
+          ),
+        }),
+      ),
+    }),
+    response: {
+      201: z.object({
+        id: z.string(),
+        name: z.string(),
+        workoutDays: z.array(
+          z.object({
+            name: z.string(),
+            weekDay: z.enum(WeekDay),
+            isRest: z.boolean(),
+            coverImageUrl: z.url().optional(),
+            estimatedDurationInSeconds: z.number(),
+            exercises: z.array(
+              z.object({
+                order: z.number(),
+                name: z.string(),
+                sets: z.number(),
+                reps: z.number(),
+                restTimeInSeconds: z.number(),
+              }),
+            ),
+          }),
+        ),
+      }),
+      400: z.object({
+        error: z.string(),
+        code: z.string(),
+      }),
+      401: z.object({
+        error: z.string(),
+        code: z.string(),
+      }),
+      404: z.object({
+        error: z.string(),
+        code: z.string(),
+      }),
+      500: z.object({
+        error: z.string(),
+        code: z.string(),
+      }),
+    },
+  },
+  handler: async (request, reply) => {
+    try {
+      const session = await auth.api.getSession({
+        headers: fromNodeHeaders(request.headers),
+      });
+
+      if (!session) {
+        return reply.status(401).send({
+          error: "Unauthorized",
+          code: "UNAUTHORIZED",
+        });
+      }
+
+      const createWorkoutPlan = new CreateWorkoutPlan();
+
+      const result = await createWorkoutPlan.execute({
+        userId: session.user.id,
+        name: request.body.name,
+        workoutDays: request.body.workoutDays,
+      });
+
+      return reply.status(201).send(result);
+    } catch (error) {
+      app.log.error(error);
+
+      if (error instanceof NotFoundError) {
+        return reply.status(404).send({
+          error: error.message,
+          code: "NOT_FOUND_ERROR",
+        });
+      }
+
+      return reply.status(500).send({
+        error: "Internal server error",
+        code: "INTERNAL_SERVER_ERROR",
+      });
+    }
+  },
+});
+
+// HELLO WORLD ENDPOINT
+app.route({
   method: "GET",
   url: "/",
-  handler: () => {
-    return { message: "Hello World!" };
+  handler: async (_, reply) => {
+    return reply.send({ message: "Hello World" });
   },
   schema: {
     description: "Hello World endpoint",
@@ -111,6 +227,8 @@ app.route({
     }
   },
 });
+
+await app.ready();
 
 try {
   await app.listen({ port: Number(process.env.PORT) || 8081 });
